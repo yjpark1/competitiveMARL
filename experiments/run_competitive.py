@@ -9,14 +9,21 @@ from rls.replay_buffer import ReplayBuffer
 from rls.agent.multiagent.model_ddpg_competitive import Trainer
 
 
-def split_obs_n(env, obs_n):
-    return
+def split_own_adv(env, z):
+    z_own = [y for x, y in zip(env.agents, z) if not x.adversary]
+    z_adv = [y for x, y in zip(env.agents, z) if x.adversary]
 
-def combine_obs_n(env, obs_n_own, obs_n_adv):
-    return
+    return z_own, z_adv
 
-def combine_obs_n(env, action_n_env_own, action_n_env_adv):
-    return
+
+def combine_obs_n(obs_n_own, obs_n_adv):
+    obs_n = obs_n_own + obs_n_adv
+    return obs_n
+
+
+def combine_action_n(action_n_own, action_n_adv):
+    action_n_env = np.concatenate([action_n_adv, action_n_own], axis=0)
+    return action_n_env
 
 
 def run(env, actor_own, critic_own, actor_adv, critic_adv, 
@@ -25,6 +32,11 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
     """
     function of learning agent
     """
+    if flag_train:
+        exploration_mode = 'train'
+    else:
+        exploration_mode = 'test'
+
     torch.set_default_tensor_type('torch.FloatTensor')
     print('observation shape: ', env.observation_space)
     print('action shape: ', env.action_space)
@@ -32,9 +44,9 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
     # <create actor-critic networks>
     memory_own = ReplayBuffer(size=1e+6)
     memory_adv = ReplayBuffer(size=1e+6)
-    learner_own = Trainer(actor_own, critic_own, memory_own,
+    learner_own = Trainer(actor_own, critic_own, memory_own, memory_adv,
                           model_own=own_model_own, model_adv=own_model_adv, action_type=action_type)
-    learner_adv = Trainer(actor_adv, critic_adv, memory_adv,
+    learner_adv = Trainer(actor_adv, critic_adv, memory_adv, memory_own,
                           model_own=adv_model_own, model_adv=adv_model_adv, action_type=action_type)
 
     episode_rewards = [0.0]  # sum of rewards for all agents
@@ -43,6 +55,7 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
     final_ep_ag_rewards = []  # agent rewards for training curve
     agent_info = [[[]]]  # placeholder for benchmarking info
     obs_n = env.reset()
+    obs_n_own, obs_n_adv = split_own_adv(env, obs_n)
     episode_step = 0
     train_step = 0
     t_start = time.time()
@@ -50,24 +63,27 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
     print('Starting iterations...')
     while True:
         # get action
-        action_n_own = learner_own.get_exploration_action(obs_n)[0]
-        action_n_env_own = [np.array(x) for x in action_n_own.tolist()]
-
-        action_n_adv = learner_own.get_exploration_action(obs_n)[0]
-        action_n_env_adv = [np.array(x) for x in action_n_adv.tolist()]
+        action_n_own = learner_own.get_exploration_action(obs_n_own, mode=exploration_mode)
+        action_n_adv = learner_adv.get_exploration_action(obs_n_adv, mode=exploration_mode)
 
         # environment step
+        action_n_env = combine_action_n(action_n_own, action_n_adv)
         new_obs_n, rew_n, done_n, info_n = env.step(action_n_env)
+        new_obs_n_own, new_obs_n_adv = split_own_adv(env, new_obs_n)
+
         # make shared reward
-        rew_shared = np.sum(rew_n)
+        rew_own, rew_adv = split_own_adv(rew_n)
+        rew_own = np.sum(rew_own)
+        rew_adv = np.sum(rew_adv)
 
         episode_step += 1
         done = all(done_n)
         terminal = (episode_step >= arglist.max_episode_len)
         # collect experience
-        learner_own.memory.add(obs_n, action_n_env, rew_shared, new_obs_n, float(done))
-        learner_adv.memory.add(obs_n, action_n_env, rew_shared, new_obs_n, float(done))
-        obs_n = new_obs_n
+        learner_own.memory_own.add(obs_n_own, action_n_own, rew_own, new_obs_n_own, float(done))
+        learner_adv.memory_own.add(obs_n_adv, action_n_adv, rew_adv, new_obs_n_adv, float(done))
+        obs_n_own = new_obs_n_own
+        obs_n_adv = new_obs_n_adv
 
         for i, rew in enumerate(rew_n):
             episode_rewards[-1] += rew
@@ -75,6 +91,7 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
 
         if done or terminal:
             obs_n = env.reset()
+            obs_n_own, obs_n_adv = split_own_adv(env, obs_n)
             episode_step = 0
             episode_rewards.append(0)
             for a in agent_rewards:
@@ -118,7 +135,9 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
                 with open(file_name, 'wb') as fp:
                     pickle.dump(hist, fp)
                 print('...Finished total of {} episodes.'.format(len(episode_rewards)))
-                learner.save_models(scenario_name + '_fin_' + str(cnt))  # save model
+                # save model
+                learner_own.save_models(scenario_name + 'own_fin_' + str(cnt))
+                learner_adv.save_models(scenario_name + 'adv_fin_' + str(cnt))
                 break
         else:
             # save model, display testing output
@@ -136,8 +155,7 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
             # saves final episode reward for plotting training curve later
             if len(episode_rewards) > arglist.num_episodes:
                 hist = {'reward_episodes': episode_rewards,
-                        'reward_episodes_by_agents': agent_rewards,
-                        'memory': memory}
+                        'reward_episodes_by_agents': agent_rewards}
                 file_name = 'Models/test_history_' + scenario_name + '_' + str(cnt) + '.pkl'
                 with open(file_name, 'wb') as fp:
                     pickle.dump(hist, fp)
@@ -148,40 +166,63 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
 
 
 if __name__ == '__main__':
-    from rls.model.ac_network_model_multi_gumbel import ActorNetwork, CriticNetwork
-    from rls.agent.multiagent.model_ddpg_gumbel_fix import Trainer
+    import torch
+    import numpy as np
     from experiments.scenarios import make_env
+    from rls import arglist
+
+    # proposed
+    from rls.model.ac_networks_competitive import ActorNetwork, CriticNetwork
+    from experiments.run_competitive import run
+
     import os
 
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+
+
+    TEST_ONLY = False
     arglist.actor_learning_rate = 1e-2
     arglist.critic_learning_rate = 1e-2
 
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-    os.environ["CUDA_VISIBLE_DEVICES"] = '1'
-
-    cnt = 11
-    # scenario_name = 'simple_spread'
-    scenario_name = 'simple_speaker_listener'
-    env = make_env(scenario_name, benchmark=False, discrete_action=True)
+    scenario_name = 'simple_adversary'
+    env = make_env(scenario_name, discrete_action=True)
+    cnt = 0
     seed = cnt + 12345678
+
     env.seed(seed)
     torch.cuda.empty_cache()
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    dim_obs = env.observation_space[0].shape[0]
-    if hasattr(env.action_space[0], 'high'):
-        dim_action = env.action_space[0].high + 1
-        dim_action = dim_action.tolist()
-        action_type = 'MultiDiscrete'
-    else:
-        dim_action = env.action_space[0].n
-        action_type = 'Discrete'
+    dim_obs_own = env.observation_space[-1].shape[0]
+    dim_obs_adv = env.observation_space[0].shape[0]
+    dim_action = env.action_space[0].n
+    action_type = 'Discrete'
+    # own
+    actor_own = ActorNetwork(input_dim=dim_obs_own, out_dim=dim_action,
+                             model_own=True, model_adv=True)
+    critic_own = CriticNetwork(input_dim=dim_obs_own + np.sum(dim_action), out_dim=1,
+                               model_own=True, model_adv=True)
+    # opponent
+    actor_adv = ActorNetwork(input_dim=dim_obs_adv, out_dim=dim_action,
+                             model_own=True, model_adv=True)
+    critic_adv = CriticNetwork(input_dim=dim_obs_adv + np.sum(dim_action), out_dim=1,
+                               model_own=True, model_adv=True)
 
-    actor = ActorNetwork(input_dim=dim_obs, out_dim=dim_action)
-    critic = CriticNetwork(input_dim=dim_obs + sum(dim_action), out_dim=1)
-    run(env, actor, critic, Trainer, scenario_name, action_type, cnt=cnt)
+    if TEST_ONLY:
+        arglist.num_episodes = 100
+        flag_train = False
+    else:
+        arglist.num_episodes = 40000
+        flag_train = True
+
+    run(env, actor_own, critic_own, actor_adv, critic_adv,
+        own_model_own=True, own_model_adv=True, adv_model_own=True, adv_model_adv=True,
+        flag_train=flag_train, scenario_name=scenario_name,
+        action_type='Discrete', cnt=0)
+
 
 
 

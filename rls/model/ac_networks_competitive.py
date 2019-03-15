@@ -73,10 +73,10 @@ class ActorNetwork(nn.Module):
         out = [policy]
         if self.model_own:
             next_state = self.model_own(hid)
-            out += next_state
+            out += [next_state]
         if self.model_adv:
             adv_action = self.model_own(hid)
-            out += adv_action
+            out += [adv_action]
 
         return out
 
@@ -165,9 +165,9 @@ class CriticNetwork(nn.Module):
         out = [Q]
         if self.model_own:
             own_r = self.model_own(attn_output)
-            out += own_r
+            out += [own_r]
         if self.model_adv:
             adv_r = self.model_own(attn_output)
-            out += adv_r
+            out += [adv_r]
 
         return out

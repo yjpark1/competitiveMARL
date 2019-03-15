@@ -37,14 +37,14 @@ for scenario_name in scenarios:
         action_type = 'Discrete'
         # own
         actor_own = ActorNetwork(input_dim=dim_obs_own, out_dim=dim_action,
-                                 model_own=False, model_adv=False)
+                                 model_own=True, model_adv=True)
         critic_own = CriticNetwork(input_dim=dim_obs_own + np.sum(dim_action), out_dim=1,
-                                   model_own=False, model_adv=False)
+                                   model_own=True, model_adv=True)
         # opponent
         actor_adv = ActorNetwork(input_dim=dim_obs_adv, out_dim=dim_action,
-                                 model_own=False, model_adv=False)
+                                 model_own=True, model_adv=True)
         critic_adv = CriticNetwork(input_dim=dim_obs_adv + np.sum(dim_action), out_dim=1,
-                                   model_own=False, model_adv=False)
+                                   model_own=True, model_adv=True)
 
         if TEST_ONLY:
             arglist.num_episodes = 100

@@ -17,6 +17,7 @@ class Trainer:
         DDPG for categorical action
         """
         self.device = torch.device('cuda:0')
+        # self.device = torch.device('cpu')
 
         self.iter = 0
         self.actor = actor.to(self.device)
@@ -80,12 +81,11 @@ class Trainer:
         return done
 
     def to_onehot(self, actions):
-        actions = np.argmax(actions, axis=-1)
         actions = to_categorical(actions, num_classes=self.nb_actions)
         actions = actions.astype('float32')
         return actions
 
-    def get_exploration_action(self, state):
+    def get_exploration_action(self, state, mode='train'):
         """
         gets the action from actor added with exploration noise
         :param state: state (Numpy array)
@@ -96,15 +96,16 @@ class Trainer:
         state = state.to(self.device)
 
         if self.action_type == 'Discrete':
-            logits, _ = self.actor.forward(state)
+            out = self.actor.forward(state)
+            logits = out[0]
             logits = logits.detach()
-            actions = self.gumbel_softmax(logits, hard=True)
-            actions = actions.cpu().numpy()
-        elif self.action_type == 'MultiDiscrete':
-            logits, _ = self.actor.forward(state)
-            logits = [x.detach() for x in logits]
-            actions = [self.gumbel_softmax(x, hard=True) for x in logits]
-            actions = [x.cpu().numpy() for x in actions]
+            if mode == 'train':
+                actions = self.gumbel_softmax(logits, hard=True)
+                actions = actions.cpu().numpy()
+            elif mode == 'test':
+                actions = torch.argmax(logits, dim=-1)
+                actions = self.to_onehot(actions)
+            actions = actions[0]
 
         return actions
 
