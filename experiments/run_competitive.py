@@ -12,7 +12,6 @@ from rls.agent.multiagent.model_ddpg_competitive import Trainer
 def split_own_adv(env, z):
     z_own = [y for x, y in zip(env.agents, z) if not x.adversary]
     z_adv = [y for x, y in zip(env.agents, z) if x.adversary]
-
     return z_own, z_adv
 
 
@@ -49,9 +48,11 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
     learner_adv = Trainer(actor_adv, critic_adv, memory_adv, memory_own,
                           model_own=adv_model_own, model_adv=adv_model_adv, action_type=action_type)
 
-    episode_rewards = [0.0]  # sum of rewards for all agents
+    episode_rewards_own = [0.0]  # sum of rewards for our agents
+    episode_rewards_adv = [0.0]  # sum of rewards for adversary agents
     agent_rewards = [[0.0] for _ in range(env.n)]  # individual agent reward
-    final_ep_rewards = []  # sum of rewards for training curve
+    final_ep_rewards_own = []  # sum of rewards for training curve
+    final_ep_rewards_adv = []  # sum of rewards for training curve
     final_ep_ag_rewards = []  # agent rewards for training curve
     agent_info = [[[]]]  # placeholder for benchmarking info
     obs_n = env.reset()
@@ -72,7 +73,7 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
         new_obs_n_own, new_obs_n_adv = split_own_adv(env, new_obs_n)
 
         # make shared reward
-        rew_own, rew_adv = split_own_adv(rew_n)
+        rew_own, rew_adv = split_own_adv(env, rew_n)
         rew_own = np.sum(rew_own)
         rew_adv = np.sum(rew_adv)
 
@@ -85,15 +86,19 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
         obs_n_own = new_obs_n_own
         obs_n_adv = new_obs_n_adv
 
-        for i, rew in enumerate(rew_n):
-            episode_rewards[-1] += rew
+        for i, (ag, rew) in enumerate(zip(env.agents, rew_n)):
+            if ag.adversary:
+                episode_rewards_adv[-1] += rew
+            else:
+                episode_rewards_own[-1] += rew
             agent_rewards[i][-1] += rew
 
         if done or terminal:
             obs_n = env.reset()
             obs_n_own, obs_n_adv = split_own_adv(env, obs_n)
             episode_step = 0
-            episode_rewards.append(0)
+            episode_rewards_own.append(0)
+            episode_rewards_adv.append(0)
             for a in agent_rewards:
                 a.append(0)
             agent_info.append([[]])
@@ -117,49 +122,56 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
 
         if flag_train:
             # save model, display training output
-            if terminal and (len(episode_rewards) % arglist.save_rate == 0):
+            if terminal and (len(episode_rewards_own) % arglist.save_rate == 0):
                 # print statement depends on whether or not there are adversaries
-                print("steps: {}, episodes: {}, mean episode reward: {}, time: {}".format(
-                    train_step, len(episode_rewards), np.mean(episode_rewards[-arglist.save_rate:]),
+                print("steps: {}, episodes: {}, reward (our): {}, reward (adv): {}, time: {}".format(
+                    train_step, len(episode_rewards_own),
+                    round(np.mean(episode_rewards_own[-arglist.save_rate:]), 3),
+                    round(np.mean(episode_rewards_adv[-arglist.save_rate:]), 3),
                     round(time.time() - t_start, 3)))
                 t_start = time.time()
                 # Keep track of final episode reward
-                final_ep_rewards.append(np.mean(episode_rewards[-arglist.save_rate:]))
+                final_ep_rewards_own.append(np.mean(episode_rewards_own[-arglist.save_rate:]))
+                final_ep_rewards_adv.append(np.mean(episode_rewards_adv[-arglist.save_rate:]))
                 for rew in agent_rewards:
                     final_ep_ag_rewards.append(np.mean(rew[-arglist.save_rate:]))
 
             # saves final episode reward for plotting training curve later
-            if len(episode_rewards) > arglist.num_episodes:
-                hist = {'reward_episodes': episode_rewards, 'reward_episodes_by_agents': agent_rewards}
+            if len(episode_rewards_own) > arglist.num_episodes:
+                hist = {'reward_episodes_own': episode_rewards_own,
+                        'reward_episodes_adv': episode_rewards_adv,
+                        'reward_episodes_by_agents': agent_rewards}
                 file_name = 'Models/history_' + scenario_name + '_' + str(cnt) + '.pkl'
                 with open(file_name, 'wb') as fp:
                     pickle.dump(hist, fp)
-                print('...Finished total of {} episodes.'.format(len(episode_rewards)))
+                print('...Finished total of {} episodes.'.format(len(episode_rewards_own)))
                 # save model
                 learner_own.save_models(scenario_name + 'own_fin_' + str(cnt))
                 learner_adv.save_models(scenario_name + 'adv_fin_' + str(cnt))
                 break
         else:
             # save model, display testing output
-            if terminal and (len(episode_rewards) % 10 == 0):
+            if terminal and (len(episode_rewards_own) % 10 == 0):
                 # print statement depends on whether or not there are adversaries
                 print("steps: {}, episodes: {}, mean episode reward: {}, time: {}".format(
-                    train_step, len(episode_rewards), np.mean(episode_rewards[-10:]),
+                    train_step, len(episode_rewards_own), np.mean(episode_rewards_own[-10:]),
                     round(time.time() - t_start, 3)))
                 t_start = time.time()
                 # Keep track of final episode reward
-                final_ep_rewards.append(np.mean(episode_rewards[-10:]))
+                final_ep_rewards_own.append(np.mean(episode_rewards_own[-10:]))
+                final_ep_rewards_adv.append(np.mean(episode_rewards_adv[-10:]))
                 for rew in agent_rewards:
                     final_ep_ag_rewards.append(np.mean(rew[-10:]))
 
             # saves final episode reward for plotting training curve later
-            if len(episode_rewards) > arglist.num_episodes:
-                hist = {'reward_episodes': episode_rewards,
+            if len(episode_rewards_own) > arglist.num_episodes:
+                hist = {'reward_episodes_own': episode_rewards_own,
+                        'reward_episodes_adv': episode_rewards_adv,
                         'reward_episodes_by_agents': agent_rewards}
                 file_name = 'Models/test_history_' + scenario_name + '_' + str(cnt) + '.pkl'
                 with open(file_name, 'wb') as fp:
                     pickle.dump(hist, fp)
-                print('...Finished total of {} episodes.'.format(len(episode_rewards)))
+                print('...Finished total of {} episodes.'.format(len(episode_rewards_own)))
                 break
 
 

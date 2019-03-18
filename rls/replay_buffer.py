@@ -498,3 +498,18 @@ class EpisodicMemory(Memory):
     @property
     def is_episodic(self):
         return True
+
+
+if __name__ == '__main__':
+    memory_own = ReplayBuffer(size=1e+6)
+    memory_adv = ReplayBuffer(size=1e+6)
+
+    for i in range(100):
+        memory_own.add(i, i, i, i, i)
+        memory_adv.add(i, i, i, i, i)
+
+    index = memory_own.make_index(5)
+
+    a = memory_own.sample_index(index)
+    b = memory_adv.sample_index(index)
+

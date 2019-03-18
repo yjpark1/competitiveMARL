@@ -11,13 +11,16 @@ GAMMA = 0.95
 
 
 class Trainer:
-    def __init__(self, actor, critic, memory_own, memory_adv, 
+    def __init__(self, actor, critic, memory_own, memory_adv,
                  model_own=False, model_adv=False, action_type='Discrete'):
         """
         DDPG for categorical action
         """
         self.device = torch.device('cuda:0')
         # self.device = torch.device('cpu')
+
+        self.model_own = model_own
+        self.model_adv = model_adv
 
         self.iter = 0
         self.actor = actor.to(self.device)
@@ -30,7 +33,7 @@ class Trainer:
 
         self.memory_own = memory_own
         self.memory_adv = memory_adv
-        self.nb_actions = 5
+        self.nb_actions = actor.out_dim
         self.action_type = action_type  # MultiDiscrete
 
         self.target_actor.eval()
@@ -95,17 +98,16 @@ class Trainer:
         state = torch.from_numpy(state)
         state = state.to(self.device)
 
-        if self.action_type == 'Discrete':
-            out = self.actor.forward(state)
-            logits = out[0]
-            logits = logits.detach()
-            if mode == 'train':
-                actions = self.gumbel_softmax(logits, hard=True)
-                actions = actions.cpu().numpy()
-            elif mode == 'test':
-                actions = torch.argmax(logits, dim=-1)
-                actions = self.to_onehot(actions)
-            actions = actions[0]
+        out = self.actor.forward(state)
+        logits = out[0]
+        logits = logits.detach()
+        if mode == 'train':
+            actions = self.gumbel_softmax(logits, hard=True)
+            actions = actions.cpu().numpy()
+        elif mode == 'test':
+            actions = torch.argmax(logits, dim=-1)
+            actions = self.to_onehot(actions)
+        actions = actions[0]
 
         return actions
 
@@ -118,10 +120,13 @@ class Trainer:
         y = y.contiguous().view(n, t, y.size()[1])
         return y
 
-    def process_batch(self):
-        index = self.memory.make_index(arglist.batch_size)
+    def set_index(self):
+        index = self.memory_own.make_index(arglist.batch_size)
+        return index
+
+    def process_batch(self, memory, index):
         # collect replay sample from all agents
-        s0, a0, r, s1, d = self.memory.sample_index(index)
+        s0, a0, r, s1, d = memory.sample_index(index)
 
         s0 = torch.tensor(s0, dtype=torch.float32)
         a0 = torch.tensor(a0, dtype=torch.float32)
@@ -134,10 +139,12 @@ class Trainer:
     def optimize(self):
         """
         Samples a random batch from replay memory and performs optimization
-        :return:
+        critic outputs: [Q, r_own, r_adv]
+        actor outputs: [policy, s_own, a_adv]
         """
-        # experiences = self.memory.sample(arglist.batch_size)
-        s0, a0, r, s1, d = self.process_batch()
+        index = self.set_index()
+        s0, a0, r, s1, d = self.process_batch(self.memory_own, index)
+        _, a0_adv, r_adv, _, _ = self.process_batch(self.memory_adv, index)
 
         s0 = s0.to(self.device)
         a0 = a0.to(self.device)
@@ -145,32 +152,41 @@ class Trainer:
         s1 = s1.to(self.device)
         d = d.to(self.device)
 
+        a0_adv = a0_adv.to(self.device)
+        r_adv = r_adv.to(self.device)
+
         # ---------------------- optimize critic ----------------------
         # Use target actor exploitation policy here for loss evaluation
-        logits1, _ = self.target_actor.forward(s1)
-        # a1 = torch.eye(self.nb_actions)[torch.argmax(logits1, -1)].to(self.device)
-        if self.action_type == 'Discrete':
-            a1 = self.gumbel_softmax(logits1)
-        elif self.action_type == 'MultiDiscrete':
-            a1 = [self.gumbel_softmax(x) for x in logits1]
-            a1 = torch.cat(a1, dim=-1)
+        logits1 = self.target_actor.forward(s1)[0]
+        a1 = self.gumbel_softmax(logits1)
 
-        q_next, _ = self.target_critic.forward(s1, a1)
+        q_next = self.target_critic.forward(s1, a1)[0]
         q_next = q_next.detach()
         q_next = torch.squeeze(q_next)
+
         # Loss: TD error
         # y_exp = r + gamma*Q'( s1, pi'(s1))
         y_expected = r + GAMMA * q_next * (1. - d)
         # y_pred = Q( s0, a0)
-        y_predicted, pred_r = self.critic.forward(s0, a0)
-        y_predicted = torch.squeeze(y_predicted)
-        pred_r = torch.squeeze(pred_r)
+        out = self.critic.forward(s0, a0)
 
-        # Sum. Loss
+        # Sum. loss of critic
+        y_predicted = out[0]
+        y_predicted = torch.squeeze(y_predicted)
         critic_TDLoss = torch.nn.SmoothL1Loss()(y_predicted, y_expected)
-        critic_ModelLoss = torch.nn.L1Loss()(pred_r, r)
+
         loss_critic = critic_TDLoss
-        loss_critic += critic_ModelLoss
+        if self.model_own:
+            pred_r = out[1]
+            pred_r = torch.squeeze(pred_r)
+            critic_ModelLoss_own = torch.nn.L1Loss()(pred_r, r)
+            loss_critic += critic_ModelLoss_own
+
+        if self.model_adv:
+            pred_r_adv = out[2]
+            pred_r_adv = torch.squeeze(pred_r_adv)
+            critic_ModelLoss_adv = torch.nn.L1Loss()(pred_r_adv, r_adv)
+            loss_critic += critic_ModelLoss_adv
 
         # Update critic
         self.critic_optimizer.zero_grad()
@@ -179,35 +195,37 @@ class Trainer:
         self.critic_optimizer.step()
 
         # ---------------------- optimize actor ----------------------
-        pred_logits0, pred_s1 = self.actor.forward(s0)
-        if self.action_type == 'Discrete':
-            pred_a0 = self.gumbel_softmax(pred_logits0)
-            # pred_a0 = torch.nn.Softmax(dim=-1)(pred_logits0)
-        elif self.action_type == 'MultiDiscrete':
-            pred_a0 = [self.gumbel_softmax(x) for x in pred_logits0]
-            pred_a0 = torch.cat(pred_a0, dim=-1)
+        out = self.actor.forward(s0)
+        pred_logits0 = out[0]
+        pred_a0 = self.gumbel_softmax(pred_logits0)
 
-        # Loss: entropy for exploration
-        # pred_a0_prob = torch.nn.functional.softmax(pred_logits0, dim=-1)
-        # entropy = torch.sum(pred_a0 * torch.log(pred_a0 + 1e-10), dim=-1).mean()
+        # Sum. loss of actor
+        # Loss: max. Q
+        Q = self.critic.forward(s0, pred_a0)[0]
+        actor_maxQ = -1 * Q.mean()
+        loss_actor = actor_maxQ
+
+        if self.model_own:
+            pred_s1 = out[1]
+            pred_s1 = torch.squeeze(pred_s1)
+            actor_ModelLoss_own = torch.nn.L1Loss()(pred_s1, s1)
+            loss_actor += actor_ModelLoss_own
+
+        if self.model_adv:
+            pred_a0_adv = out[2]
+            pred_a0_adv = torch.squeeze(pred_a0_adv)
+            actor_ModelLoss_adv = torch.nn.CrossEntropyLoss()(pred_a0_adv, a0_adv)
+
+            pred_a0_adv.shape
+            a0_adv.shape
+
+            loss_actor += actor_ModelLoss_adv
 
         # Loss: regularization
         l2_reg = torch.cuda.FloatTensor(1)
         for W in self.actor.parameters():
             l2_reg = l2_reg + W.norm(2)
-
-        # Loss: max. Q
-        Q, _ = self.critic.forward(s0, pred_a0)
-        actor_maxQ = -1 * Q.mean()
-
-        # Loss: env loss
-        actor_ModelLoss = torch.nn.L1Loss()(pred_s1, s1)
-
-        # Sum. Loss
-        loss_actor = actor_maxQ
-        # loss_actor += entropy * 0.05  # <replace Gaussian noise>
         loss_actor += torch.squeeze(l2_reg) * 1e-3
-        loss_actor += actor_ModelLoss
 
         # Update actor
         # run random noise to exploration
