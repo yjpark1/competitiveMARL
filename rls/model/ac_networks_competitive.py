@@ -24,7 +24,8 @@ class ActorNetwork(nn.Module):
     """
     MLP network (can be used as critic or actor)
     """
-    def __init__(self, input_dim, out_dim, model_own=False, model_adv=False):
+    def __init__(self, input_dim, out_dim, model_own=False, model_adv=False,
+                 num_adv=0, adv_out_dim=0):
         """
         Inputs:
             agent_dim (int) : Number of dimensions for agents count
@@ -36,8 +37,11 @@ class ActorNetwork(nn.Module):
         super(ActorNetwork, self).__init__()
         self.model_own = model_own
         self.model_adv = model_adv
+        self.num_adv = num_adv
+        self.adv_out_dim = adv_out_dim
         self.out_dim = out_dim
         self.nonlin = F.relu
+        # layers
         self.dense1 = TimeDistributed(nn.Linear(input_dim, 64))
         # return sequence is not exist in pytorch. Instead, output will return with first dimension for sequences.
         self.bilstm = nn.LSTM(64, 32, num_layers=1,
@@ -52,7 +56,9 @@ class ActorNetwork(nn.Module):
         if self.model_own:
             self.model_own = TimeDistributed(nn.Linear(64, input_dim))
         if self.model_adv:
-            self.model_adv = TimeDistributed(nn.Linear(64, self.out_dim))
+            self.model_adv1 = nn.LSTM(64, 32, num_layers=1,
+                                      batch_first=True, bidirectional=True)
+            self.model_adv2 = TimeDistributed(nn.Linear(64, self.out_dim))
 
     def forward(self, obs):
         """
@@ -62,7 +68,7 @@ class ActorNetwork(nn.Module):
             out (PyTorch Matrix): policy, next_state
         """
         hid = F.relu(self.dense1(obs))
-        hid, _ = self.bilstm(hid, None)
+        hid, (_, c) = self.bilstm(hid, None)
         hid = F.relu(hid)
         if type(self.out_dim) is list:
             policy = [self.dense2_1(hid), self.dense2_2(hid)]
@@ -75,7 +81,11 @@ class ActorNetwork(nn.Module):
             next_state = self.model_own(hid)
             out += [next_state]
         if self.model_adv:
-            adv_action = self.model_own(hid)
+            x = torch.cat((c[0], c[1]), dim=-1)
+            x = torch.cat([x for _ in range(self.num_adv)], dim=0)
+            x = torch.reshape(x, (-1, self.num_adv, 64))
+            hid_adv_action, _ = self.model_adv1(x)
+            adv_action = self.model_adv2(hid_adv_action)
             out += [adv_action]
 
         return out
@@ -99,6 +109,7 @@ class CriticNetwork(nn.Module):
         self.model_own = model_own
         self.model_adv = model_adv
         self.out_dim = out_dim
+
         self.nonlin = F.relu
         self.dense1 = TimeDistributed(nn.Linear(input_dim, 64))
         # return sequence is not exist in pytorch. Instead, output will return with first dimension for sequences.
@@ -141,7 +152,7 @@ class CriticNetwork(nn.Module):
 
         return new_hidden_state
 
-    def forward(self, obs, action):
+    def forward(self, obs, action, adv_action=None):
         """
         Inputs:
             X (PyTorch Matrix): Batch of observations
@@ -149,12 +160,8 @@ class CriticNetwork(nn.Module):
             out (PyTorch Matrix): Q-function
             out (PyTorch Matrix): reward
         """
-        if type(action) is list:
-            obs_act = torch.cat([obs] + action, dim=-1)
-        else:
-            obs_act = torch.cat([obs] + [action], dim=-1)
+        obs_act = torch.cat([obs] + [action], dim=-1)
         out = F.relu(self.dense1(obs_act))
-
         output, (final_hidden_state, final_cell_state) = self.lstm(out, None)
         # final_hidden_state.size() = (1, batch_size, hidden_size)
         # output.size() = (batch_size, num_seq, hidden_size)
@@ -171,3 +178,12 @@ class CriticNetwork(nn.Module):
             out += [adv_r]
 
         return out
+
+
+if __name__ == '__main__':
+    import numpy as np
+    actor = ActorNetwork(input_dim=10, out_dim=5, model_own=True, model_adv=True,
+                         num_adv=4, adv_out_dim=5)
+    x = np.random.uniform(size=(128, 3, 10))
+    x = torch.tensor(x, dtype=torch.float32)
+    y = actor.forward(x)
