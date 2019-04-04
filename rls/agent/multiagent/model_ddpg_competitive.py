@@ -106,6 +106,7 @@ class Trainer:
             actions = actions.cpu().numpy()
         elif mode == 'test':
             actions = torch.argmax(logits, dim=-1)
+            actions = actions.cpu().numpy()
             actions = self.to_onehot(actions)
         actions = actions[0]
 
@@ -214,8 +215,8 @@ class Trainer:
         if self.model_adv:
             pred_a0_adv = out[2]
             pred_a0_adv = torch.squeeze(pred_a0_adv)
-            actor_ModelLoss_adv = torch.nn.CrossEntropyLoss()(pred_a0_adv.view(-1, self.nb_actions),
-                                                              torch.argmax(a0_adv.view(-1, self.nb_actions), dim=-1))
+            actor_ModelLoss_adv = torch.nn.CrossEntropyLoss()(pred_a0_adv.contiguous().view(-1, self.nb_actions),
+                                                              torch.argmax(a0_adv.contiguous().view(-1, self.nb_actions), dim=-1))
             loss_actor += actor_ModelLoss_adv
 
         # Loss: regularization

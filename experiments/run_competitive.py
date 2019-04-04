@@ -3,6 +3,7 @@ import torch
 import time
 import pickle
 from copy import deepcopy
+from PIL import Image
 
 from rls import arglist
 from rls.replay_buffer import ReplayBuffer
@@ -21,11 +22,16 @@ def combine_obs_n(obs_n_own, obs_n_adv):
 
 
 def combine_action_n(action_n_own, action_n_adv):
+    if len(action_n_own.shape) == 1:
+        action_n_own = np.array([action_n_own])
+    if len(action_n_adv.shape) == 1:
+        action_n_adv = np.array([action_n_adv])
+
     action_n_env = np.concatenate([action_n_adv, action_n_own], axis=0)
     return action_n_env
 
 
-def run(env, actor_own, critic_own, actor_adv, critic_adv, 
+def run(env, actor_own, critic_own, actor_adv, critic_adv,
         own_model_own=False, own_model_adv=False, adv_model_own=False, adv_model_adv=False,
         flag_train=True, scenario_name=None, action_type='Discrete', cnt=0):
     """
@@ -47,6 +53,23 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
                           model_own=own_model_own, model_adv=own_model_adv, action_type=action_type)
     learner_adv = Trainer(actor_adv, critic_adv, memory_adv, memory_own,
                           model_own=adv_model_own, model_adv=adv_model_adv, action_type=action_type)
+    if not flag_train:
+        if own_model_own:
+            appx_own = 'model_own vs model_own/'
+            if own_model_adv:
+                appx_own = 'model_adv vs model_adv/'
+        else:
+            appx_own = 'no_model vs no_model/'
+
+        if adv_model_own:
+            appx_adv = 'model_own vs model_own/'
+            if adv_model_adv:
+                appx_adv = 'model_adv vs model_adv/'
+        else:
+            appx_adv = 'no_model vs no_model/'
+
+        learner_own.load_models(appx_own + scenario_name + 'own_fin_' + str(cnt))
+        learner_adv.load_models(appx_adv + scenario_name + 'adv_fin_' + str(cnt))
 
     episode_rewards_own = [0.0]  # sum of rewards for our agents
     episode_rewards_adv = [0.0]  # sum of rewards for adversary agents
@@ -108,9 +131,10 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
 
         # for displaying learned policies
         if arglist.display:
-            time.sleep(0.1)
-            env.render()
-            continue
+            time.sleep(0.01)
+            frame = env.render(mode='rgb_array', close=False)
+            # Image.fromarray(frame)
+            # continue
 
         # update all trainers, if not in display or benchmark mode
         # <learning agent>
@@ -153,9 +177,12 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
             # save model, display testing output
             if terminal and (len(episode_rewards_own) % 10 == 0):
                 # print statement depends on whether or not there are adversaries
-                print("steps: {}, episodes: {}, mean episode reward: {}, time: {}".format(
-                    train_step, len(episode_rewards_own), np.mean(episode_rewards_own[-10:]),
+                print("steps: {}, episodes: {}, reward (our): {}, reward (adv): {}, time: {}".format(
+                    train_step, len(episode_rewards_own),
+                    round(np.mean(episode_rewards_own[-10:]), 3),
+                    round(np.mean(episode_rewards_adv[-10:]), 3),
                     round(time.time() - t_start, 3)))
+
                 t_start = time.time()
                 # Keep track of final episode reward
                 final_ep_rewards_own.append(np.mean(episode_rewards_own[-10:]))
@@ -168,11 +195,13 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
                 hist = {'reward_episodes_own': episode_rewards_own,
                         'reward_episodes_adv': episode_rewards_adv,
                         'reward_episodes_by_agents': agent_rewards}
-                file_name = 'Models/test_history_' + scenario_name + '_' + str(cnt) + '.pkl'
+                file_name = 'Models/test_rewards_' + scenario_name + '_' + str(cnt) + '.pkl'
                 with open(file_name, 'wb') as fp:
                     pickle.dump(hist, fp)
                 print('...Finished total of {} episodes.'.format(len(episode_rewards_own)))
+                env.close()
                 break
+
 
 
 
@@ -192,14 +221,17 @@ if __name__ == '__main__':
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
     os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
+    TEST_ONLY = True
+    if TEST_ONLY:
+        arglist.is_training = False
 
-    TEST_ONLY = False
     arglist.actor_learning_rate = 1e-2
     arglist.critic_learning_rate = 1e-2
 
     scenario_name = 'simple_tag'
+    cnt = 1
+    # scenario_name = 'simple_spread'
     env = make_env(scenario_name, discrete_action=True)
-    cnt = 0
     seed = cnt + 12345678
 
     env.seed(seed)
@@ -218,17 +250,21 @@ if __name__ == '__main__':
     num_own = len([x for x in env.agents if not x.adversary])
     num_adv = len([x for x in env.agents if x.adversary])
     # own
-    own_model_adv = True
+    own_model_own = False
+    own_model_adv = False
     actor_own = ActorNetwork(input_dim=dim_obs_own, out_dim=dim_action_own,
-                             model_own=True, model_adv=True, num_adv=num_adv, adv_out_dim=dim_action_adv)
+                             model_own=own_model_own, model_adv=own_model_adv, num_adv=num_adv,
+                             adv_out_dim=dim_action_adv)
     critic_own = CriticNetwork(input_dim=dim_obs_own + dim_action_own, out_dim=1,
-                               model_own=True, model_adv=True)
+                               model_own=own_model_own, model_adv=own_model_adv)
     # opponent
-    adv_model_adv = True
+    adv_model_own = True
+    adv_model_adv = False
     actor_adv = ActorNetwork(input_dim=dim_obs_adv, out_dim=dim_action_adv,
-                             model_own=True, model_adv=True, num_adv=num_own, adv_out_dim=dim_action_own)
+                             model_own=adv_model_own, model_adv=adv_model_adv, num_adv=num_own,
+                             adv_out_dim=dim_action_own)
     critic_adv = CriticNetwork(input_dim=dim_obs_adv + dim_action_adv, out_dim=1,
-                               model_own=True, model_adv=True)
+                               model_own=adv_model_own, model_adv=adv_model_adv)
 
     if TEST_ONLY:
         arglist.num_episodes = 100
@@ -238,7 +274,8 @@ if __name__ == '__main__':
         flag_train = True
 
     run(env, actor_own, critic_own, actor_adv, critic_adv,
-        own_model_own=True, own_model_adv=True, adv_model_own=True, adv_model_adv=True,
+        own_model_own=own_model_own, own_model_adv=own_model_adv,
+        adv_model_own=adv_model_own, adv_model_adv=adv_model_adv,
         flag_train=flag_train, scenario_name=scenario_name,
         action_type='Discrete', cnt=cnt)
 

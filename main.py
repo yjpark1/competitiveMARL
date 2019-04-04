@@ -14,7 +14,10 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 scenarios = ['simple_adversary', 'simple_crypto', 'simple_push',
              'simple_tag', 'simple_world_comm']
 
+
 TEST_ONLY = False
+if TEST_ONLY:
+    arglist.is_training = False
 
 for scenario_name in scenarios:
     arglist.actor_learning_rate = 1e-2
@@ -41,17 +44,19 @@ for scenario_name in scenarios:
         num_own = len([x for x in env.agents if not x.adversary])
         num_adv = len([x for x in env.agents if x.adversary])
         # own
+        own_model_own = True
         own_model_adv = True
         actor_own = ActorNetwork(input_dim=dim_obs_own, out_dim=dim_action_own,
-                                 model_own=True, model_adv=True, num_adv=num_adv, adv_out_dim=dim_action_adv)
+                                 model_own=own_model_own, model_adv=own_model_adv, num_adv=num_adv, adv_out_dim=dim_action_adv)
         critic_own = CriticNetwork(input_dim=dim_obs_own + dim_action_own, out_dim=1,
-                                   model_own=True, model_adv=True)
+                                   model_own=own_model_own, model_adv=own_model_adv)
         # opponent
+        adv_model_own = True
         adv_model_adv = True
         actor_adv = ActorNetwork(input_dim=dim_obs_adv, out_dim=dim_action_adv,
-                                 model_own=True, model_adv=True, num_adv=num_own, adv_out_dim=dim_action_own)
+                                 model_own=adv_model_own, model_adv=adv_model_adv, num_adv=num_own, adv_out_dim=dim_action_own)
         critic_adv = CriticNetwork(input_dim=dim_obs_adv + dim_action_adv, out_dim=1,
-                                   model_own=True, model_adv=True)
+                                   model_own=adv_model_own, model_adv=adv_model_adv)
 
         if TEST_ONLY:
             arglist.num_episodes = 100
@@ -61,6 +66,7 @@ for scenario_name in scenarios:
             flag_train = True
 
         run(env, actor_own, critic_own, actor_adv, critic_adv,
-            own_model_own=True, own_model_adv=True, adv_model_own=True, adv_model_adv=True,
+            own_model_own=own_model_own, own_model_adv=own_model_adv,
+            adv_model_own=adv_model_own, adv_model_adv=adv_model_adv,
             flag_train=flag_train, scenario_name=scenario_name,
             action_type='Discrete', cnt=cnt)

@@ -14,7 +14,7 @@ update_rate = 100
 max_nb_steps = 1e+6
 
 # verbose control
-display = False
+display = True
 save_rate = 1000
 exp_name = 'model_'
 
