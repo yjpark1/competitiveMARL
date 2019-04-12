@@ -1,7 +1,7 @@
 import torch
 
 # environment control
-max_episode_len = 300
+max_episode_len = 25
 num_episodes = 40000
 reward_factor = 1
 

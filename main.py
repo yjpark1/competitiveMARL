@@ -9,12 +9,10 @@ from experiments.run_competitive import run
 
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+# os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 scenarios = ['simple_adversary', 'simple_crypto', 'simple_push',
              'simple_tag', 'simple_world_comm']
-
-scenarios = ['simple_world_comm']
 
 TEST_ONLY = False
 if TEST_ONLY:

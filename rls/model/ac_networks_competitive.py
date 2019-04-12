@@ -54,11 +54,10 @@ class ActorNetwork(nn.Module):
 
         # approximate model layer
         if self.model_own:
-            self.model_own = TimeDistributed(nn.Linear(64, input_dim))
+            self.layer_model_own = TimeDistributed(nn.Linear(64, input_dim))
         if self.model_adv:
-            self.model_adv1 = nn.LSTM(64, self.out_dim, num_layers=1,
+            self.layer_model_adv = nn.LSTM(64, self.out_dim, num_layers=1,
                                       batch_first=True, bidirectional=False)
-            # self.model_adv2 = TimeDistributed(nn.Linear(64, self.out_dim))
 
     def forward(self, obs):
         """
@@ -78,13 +77,13 @@ class ActorNetwork(nn.Module):
         # outputs
         out = [policy]
         if self.model_own:
-            next_state = self.model_own(hid)
+            next_state = self.layer_model_own(hid)
             out += [next_state]
         if self.model_adv:
             x = torch.cat((c[0], c[1]), dim=-1)
             x = torch.cat([x for _ in range(self.num_adv)], dim=0)
             x = torch.reshape(x, (-1, self.num_adv, 64))
-            adv_action, _ = self.model_adv1(x)
+            adv_action, _ = self.layer_model_adv(x)
             out += [adv_action]
 
         return out
@@ -118,9 +117,9 @@ class CriticNetwork(nn.Module):
         
         # approximate model layer
         if self.model_own:            
-            self.model_own = nn.Linear(64, self.out_dim)
+            self.layer_model_own = nn.Linear(64, self.out_dim)
         if self.model_adv:
-            self.model_adv = nn.Linear(64, self.out_dim)
+            self.layer_model_adv = nn.Linear(64, self.out_dim)
 
     def attention_net(self, lstm_output, final_state):
         """
@@ -170,10 +169,10 @@ class CriticNetwork(nn.Module):
         # outputs
         out = [Q]
         if self.model_own:
-            own_r = self.model_own(attn_output)
+            own_r = self.layer_model_own(attn_output)
             out += [own_r]
         if self.model_adv:
-            adv_r = self.model_own(attn_output)
+            adv_r = self.layer_model_adv(attn_output)
             out += [adv_r]
 
         return out
