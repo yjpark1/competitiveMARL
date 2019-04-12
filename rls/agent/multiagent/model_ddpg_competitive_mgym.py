@@ -7,7 +7,7 @@ from rls import arglist
 import copy
 from rls.utils import to_categorical
 
-GAMMA = 0.95
+GAMMA = 0.99
 
 
 class Trainer:

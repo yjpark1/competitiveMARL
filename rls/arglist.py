@@ -1,5 +1,7 @@
+import torch
+
 # environment control
-max_episode_len = 25
+max_episode_len = 300
 num_episodes = 40000
 reward_factor = 1
 
@@ -8,18 +10,19 @@ is_training = True
 tau = 1e-2
 actor_learning_rate = None
 critic_learning_rate = None
-batch_size = 1024
+batch_size = 128
 warmup_steps = batch_size
-update_rate = 100
+update_rate = 10
 max_nb_steps = 1e+6
+device = torch.device('cuda:0')
 
 # verbose control
-display = True
+display = False
 save_rate = 1000
 exp_name = 'model_'
 
 # train model path appendix
-appx = 'env_partial/proposed+gumbel/'
+
 
 # actions
 # 0: nothing

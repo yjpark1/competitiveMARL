@@ -14,6 +14,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 scenarios = ['simple_adversary', 'simple_crypto', 'simple_push',
              'simple_tag', 'simple_world_comm']
 
+scenarios = ['simple_world_comm']
 
 TEST_ONLY = False
 if TEST_ONLY:

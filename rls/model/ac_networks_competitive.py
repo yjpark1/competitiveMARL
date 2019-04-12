@@ -24,7 +24,6 @@ class ActorNetwork(nn.Module):
     """
     MLP network (can be used as critic or actor)
     """
-
     def __init__(self, input_dim, out_dim, model_own=False, model_adv=False,
                  num_adv=0, adv_out_dim=0):
         """
@@ -75,7 +74,7 @@ class ActorNetwork(nn.Module):
             policy = [self.dense2_1(hid), self.dense2_2(hid)]
         else:
             policy = self.dense2(hid)
-
+        
         # outputs
         out = [policy]
         if self.model_own:
@@ -95,7 +94,6 @@ class CriticNetwork(nn.Module):
     """
     MLP network (can be used as critic or actor)
     """
-
     def __init__(self, input_dim, out_dim=1, model_own=False, model_adv=False):
         """
         Inputs:
@@ -117,9 +115,9 @@ class CriticNetwork(nn.Module):
         self.lstm = nn.LSTM(64, 64, num_layers=1,
                             batch_first=True, bidirectional=False)
         self.dense2 = nn.Linear(64, self.out_dim)
-
+        
         # approximate model layer
-        if self.model_own:
+        if self.model_own:            
             self.model_own = nn.Linear(64, self.out_dim)
         if self.model_adv:
             self.model_adv = nn.Linear(64, self.out_dim)
@@ -183,7 +181,6 @@ class CriticNetwork(nn.Module):
 
 if __name__ == '__main__':
     import numpy as np
-
     actor = ActorNetwork(input_dim=10, out_dim=5, model_own=True, model_adv=True,
                          num_adv=4, adv_out_dim=5)
     x = np.random.uniform(size=(128, 3, 10))
