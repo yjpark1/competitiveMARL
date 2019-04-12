@@ -10,9 +10,9 @@ is_training = True
 tau = 1e-2
 actor_learning_rate = None
 critic_learning_rate = None
-batch_size = 128
+batch_size = 1024
 warmup_steps = batch_size
-update_rate = 10
+update_rate = 100
 max_nb_steps = 1e+6
 device = torch.device('cuda:0')
 

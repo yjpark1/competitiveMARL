@@ -4,6 +4,7 @@ import time
 import pickle
 from copy import deepcopy
 from PIL import Image
+import os
 
 from rls import arglist
 from rls.replay_buffer import ReplayBuffer
@@ -53,23 +54,34 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
                           model_own=own_model_own, model_adv=own_model_adv, action_type=action_type)
     learner_adv = Trainer(actor_adv, critic_adv, memory_adv, memory_own,
                           model_own=adv_model_own, model_adv=adv_model_adv, action_type=action_type)
+    # own
+    if (own_model_own == False) & (own_model_adv == False):
+        type_own = 'no_model'
+    elif (own_model_own == True) & (own_model_adv == False):
+        type_own = 'model_own'
+    elif (own_model_own == True) & (own_model_adv == True):
+        type_own = 'model_adv'
+    else:
+        raise NotImplementedError
+
+    # opponent
+    if (adv_model_own == False) & (adv_model_adv == False):
+        type_adv = 'no_model'
+    elif (adv_model_own == True) & (adv_model_adv == False):
+        type_adv = 'model_own'
+    elif (adv_model_own == True) & (adv_model_adv == True):
+        type_adv = 'model_adv'
+    else:
+        raise NotImplementedError
+
+    dir_model = type_own + ' vs ' + type_adv
+
     if not flag_train:
-        if own_model_own:
-            appx_own = 'model_own vs model_own/'
-            if own_model_adv:
-                appx_own = 'model_adv vs model_adv/'
-        else:
-            appx_own = 'no_model vs no_model/'
-
-        if adv_model_own:
-            appx_adv = 'model_own vs model_own/'
-            if adv_model_adv:
-                appx_adv = 'model_adv vs model_adv/'
-        else:
-            appx_adv = 'no_model vs no_model/'
-
-        learner_own.load_models(appx_own + scenario_name + 'own_fin_' + str(cnt))
-        learner_adv.load_models(appx_adv + scenario_name + 'adv_fin_' + str(cnt))
+        learner_own.load_models(dir_model + '/' + scenario_name + 'own_fin_' + str(cnt))
+        learner_adv.load_models(dir_model + '/' + scenario_name + 'adv_fin_' + str(cnt))
+    else:
+        if not os.path.exists('Models/' + dir_model):
+            os.makedirs('Models/' + dir_model)
 
     episode_rewards_own = [0.0]  # sum of rewards for our agents
     episode_rewards_adv = [0.0]  # sum of rewards for adversary agents
@@ -165,13 +177,13 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
                 hist = {'reward_episodes_own': episode_rewards_own,
                         'reward_episodes_adv': episode_rewards_adv,
                         'reward_episodes_by_agents': agent_rewards}
-                file_name = 'Models/history_' + scenario_name + '_' + str(cnt) + '.pkl'
+                file_name = 'Models/' + dir_model + '/history_' + scenario_name + '_' + str(cnt) + '.pkl'
                 with open(file_name, 'wb') as fp:
                     pickle.dump(hist, fp)
                 print('...Finished total of {} episodes.'.format(len(episode_rewards_own)))
                 # save model
-                learner_own.save_models(scenario_name + 'own_fin_' + str(cnt))
-                learner_adv.save_models(scenario_name + 'adv_fin_' + str(cnt))
+                learner_own.save_models(dir_model + '/' + scenario_name + 'own_fin_' + str(cnt))
+                learner_adv.save_models(dir_model + '/' + scenario_name + 'adv_fin_' + str(cnt))
                 break
         else:
             # save model, display testing output
@@ -195,7 +207,7 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
                 hist = {'reward_episodes_own': episode_rewards_own,
                         'reward_episodes_adv': episode_rewards_adv,
                         'reward_episodes_by_agents': agent_rewards}
-                file_name = 'Models/test_rewards_' + scenario_name + '_' + str(cnt) + '.pkl'
+                file_name = 'Models/test_results/' + dir_model + '/test_rewards_' + scenario_name + '_' + str(cnt) + '.pkl'
                 with open(file_name, 'wb') as fp:
                     pickle.dump(hist, fp)
                 print('...Finished total of {} episodes.'.format(len(episode_rewards_own)))
