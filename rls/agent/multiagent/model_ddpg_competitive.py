@@ -255,8 +255,8 @@ class Trainer:
         :param episode: the count of episodes iterated (used to find the file name)
         :return:
         """
-        self.actor.load_state_dict(torch.load('./Models/' + str(fname) + '_actor.pt'))
-        self.critic.load_state_dict(torch.load('./Models/' + str(fname) + '_critic.pt'))
+        self.actor.load_state_dict(torch.load('./Models/' + str(fname) + '_actor.pt'), strict=False)
+        self.critic.load_state_dict(torch.load('./Models/' + str(fname) + '_critic.pt'), strict=False)
         self.hard_update(self.target_actor, self.actor)
         self.hard_update(self.target_critic, self.critic)
         print('Models loaded succesfully')

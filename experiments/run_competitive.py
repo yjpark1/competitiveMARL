@@ -77,8 +77,9 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
     dir_model = type_own + ' vs ' + type_adv
 
     if not flag_train:
-        learner_own.load_models(dir_model + '/' + scenario_name + 'own_fin_' + str(cnt))
-        learner_adv.load_models(dir_model + '/' + scenario_name + 'adv_fin_' + str(cnt))
+        learner_own.load_models(type_own + ' vs ' + type_own + '/' + scenario_name + 'own_fin_' + str(cnt))
+        learner_adv.load_models(type_adv + ' vs ' + type_adv + '/' + scenario_name + 'adv_fin_' + str(cnt))
+
     else:
         if not os.path.exists('Models/' + dir_model):
             os.makedirs('Models/' + dir_model)
@@ -208,6 +209,10 @@ def run(env, actor_own, critic_own, actor_adv, critic_adv,
                         'reward_episodes_adv': episode_rewards_adv,
                         'reward_episodes_by_agents': agent_rewards}
                 file_name = 'Models/test_results/' + dir_model + '/test_rewards_' + scenario_name + '_' + str(cnt) + '.pkl'
+
+                if not os.path.exists('Models/test_results/' + dir_model):
+                    os.makedirs('Models/test_results/' + dir_model)
+
                 with open(file_name, 'wb') as fp:
                     pickle.dump(hist, fp)
                 print('...Finished total of {} episodes.'.format(len(episode_rewards_own)))
