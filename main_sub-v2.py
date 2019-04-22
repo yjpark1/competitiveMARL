@@ -9,15 +9,16 @@ from experiments.run_competitive import run
 
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
-scenarios = ['simple_tag_add']
+scenarios = ['simple_world_comm_add']
 
 TEST_ONLY = False
 if TEST_ONLY:
     arglist.is_training = False
 
 eval_list = ['model_own']
+
 for type_own, type_adv in zip(eval_list, eval_list):
     # own
     if type_own == 'no_model':
