@@ -1,7 +1,7 @@
 import torch
 
 # environment control
-max_episode_len = 40
+max_episode_len = 25 # 40
 num_episodes = 40000
 reward_factor = 1
 
@@ -15,6 +15,7 @@ warmup_steps = batch_size
 update_rate = 100
 max_nb_steps = 1e+6
 device = torch.device('cuda:0')
+# device = torch.device('cpu')
 
 # verbose control
 display = False

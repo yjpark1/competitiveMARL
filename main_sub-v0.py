@@ -4,7 +4,7 @@ from experiments.scenarios import make_env
 from rls import arglist
 
 # proposed
-from rls.model.ac_networks_competitive import ActorNetwork, CriticNetwork
+from rls.model.ac_networks_competitive_new import ActorNetwork, CriticNetwork
 from experiments.run_competitive import run
 
 import os
