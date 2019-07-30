@@ -17,7 +17,7 @@ TEST_ONLY = False
 if TEST_ONLY:
     arglist.is_training = False
 
-eval_list = ['model_own']
+eval_list = ['model_adv']
 
 for type_own, type_adv in zip(eval_list, eval_list):
     # own
@@ -46,7 +46,7 @@ for type_own, type_adv in zip(eval_list, eval_list):
         arglist.actor_learning_rate = 1e-2
         arglist.critic_learning_rate = 1e-2
 
-        for cnt in range(5):
+        for cnt in range(3):
             # scenario_name = 'simple_spread'
             env = make_env(scenario_name, discrete_action=True)
             seed = cnt + 12345678

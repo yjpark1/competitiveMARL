@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from rls import arglist
 
 
 class TimeDistributed(nn.Module):
@@ -56,7 +57,7 @@ class ActorNetwork(nn.Module):
         if self.model_own:
             self.layer_model_own = TimeDistributed(nn.Linear(64, input_dim))
         if self.model_adv:
-            self.layer_model_adv = [nn.Linear(64, out_dim) for _ in range(self.num_adv)]
+            self.layer_model_adv = [nn.Linear(64, out_dim).to(arglist.device) for _ in range(self.num_adv)]
 
     def forward(self, obs):
         """

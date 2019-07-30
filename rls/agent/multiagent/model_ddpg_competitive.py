@@ -210,14 +210,14 @@ class Trainer:
             pred_s1 = out[1]
             pred_s1 = torch.squeeze(pred_s1)
             actor_ModelLoss_own = torch.nn.L1Loss()(pred_s1, s1)
-            loss_actor += actor_ModelLoss_own
+            loss_actor += actor_ModelLoss_own * 0.5
 
         if self.model_adv:
             pred_a0_adv = out[2]
             pred_a0_adv = torch.squeeze(pred_a0_adv)
             actor_ModelLoss_adv = torch.nn.CrossEntropyLoss()(pred_a0_adv.contiguous().view(-1, self.nb_actions),
                                                               torch.argmax(a0_adv.contiguous().view(-1, self.nb_actions), dim=-1))
-            loss_actor += actor_ModelLoss_adv
+            loss_actor += actor_ModelLoss_adv * 0.1
 
         # Loss: regularization
         l2_reg = torch.FloatTensor(1).to(self.device)
